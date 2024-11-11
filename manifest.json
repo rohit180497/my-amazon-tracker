@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Amazon Interaction Tracker",
+  "version": "1.0",
+  "description": "Tracks mouse movements and interactions on Amazon",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "webNavigation",
+    "desktopCapture",
+    "tabs",
+    "downloads"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "https://www.amazon.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ]
+}

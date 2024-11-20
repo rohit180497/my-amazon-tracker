@@ -1,114 +1,156 @@
-let data = {
-  searchText: "",
-  clicks: [],
-  scrolls: [],
-  timeOnPage: 0,
-  reviewsClicks: [],
-  cartAdditions: [],
-};
+let lastScrollTime = 0; // Track last scroll timestamp
+const SCROLL_THRESHOLD = 3000; // Minimum time in ms between screenshots for scroll actions
+let screenshotCounter = 1; // To generate unique screenshot IDs
+let htmlSnapshotId = null; // To store the current HTML snapshot ID
 
-let pageEntryTime = Date.now();
-let lastScrollTime = Date.now();
+// Initialize HTML Snapshot when the script loads
+initializeHtmlSnapshot();
 
-// Helper function to convert milliseconds to readable format
-function formatTime(ms) {
-  const date = new Date(ms);
-  return date.toLocaleString(); // Outputs in "YYYY-MM-DD HH:MM:SS" format based on local timezone
+// Function to initialize and store trimmed HTML snapshots
+function initializeHtmlSnapshot() {
+    const currentSnapshotId = generateHtmlSnapshotId();
+    chrome.storage.local.get(['htmlSnapshots'], (result) => {
+        const htmlSnapshots = result.htmlSnapshots || {};
+        if (!htmlSnapshots[currentSnapshotId] || htmlSnapshotId !== currentSnapshotId) {
+            htmlSnapshotId = currentSnapshotId;
+            htmlSnapshots[htmlSnapshotId] = document.body.outerHTML; // Trim to body
+            chrome.storage.local.set({ htmlSnapshots }, () => {
+                console.log("HTML snapshot saved with new ID:", htmlSnapshotId);
+            });
+        }
+    });
 }
 
-// Track search box input
-const searchBox = document.getElementById("twotabsearchtextbox");
-if (searchBox) {
-  searchBox.addEventListener("input", (event) => {
-    data.searchText = event.target.value;  // Capture text as user types
-  });
+// Generate a unique HTML snapshot ID based on the page content
+function generateHtmlSnapshotId() {
+    const pageContent = document.body.outerHTML;
+    return `html_${hashCode(pageContent)}`;
+}
 
-  // Capture search submission on 'Enter' key press
-  searchBox.addEventListener("keypress", (event) => {
-    if (event.key === "Enter") {
-      logSearchAction();
+// Generate a hash code for unique identification
+function hashCode(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0; // Convert to 32bit integer
     }
-  });
+    return hash.toString();
 }
 
-// Track search submission on search button click
-const searchButton = document.querySelector("input[type='submit']");
-if (searchButton) {
-  searchButton.addEventListener("click", logSearchAction);
+// Function to capture screenshots and return the screenshot ID
+async function captureScreenshot(eventType, target) {
+    screenshotCounter++;
+
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'capture' }, (response) => {
+            if (response && response.dataUrl) {
+                const screenshotId = `screenshot_${screenshotCounter}`;
+                const screenshot = {
+                    dataUrl: response.dataUrl,
+                    timestamp: new Date().toISOString(),
+                    screenshotId
+                };
+
+                // Store the screenshot in local storage
+                chrome.storage.local.get({ screenshots: [] }, (result) => {
+                    const screenshots = result.screenshots || [];
+                    screenshots.push(screenshot);
+                    chrome.storage.local.set({ screenshots }, () => {
+                        console.log("Screenshot captured and stored with ID:", screenshotId);
+                        resolve(screenshotId); // Resolve with the unique ID
+                    });
+                });
+            } else {
+                console.error("Failed to capture screenshot");
+                resolve(null); // Resolve with null if screenshot fails
+            }
+        });
+    });
 }
 
-function logSearchAction() {
-  const searchTime = formatTime(Date.now());
-  data.clicks.push({
-    time: searchTime,
-    type: "searchClick",
-    text: data.searchText,  // Store the search text with the click event
-  });
+// Function to capture interactions
+async function captureInteraction(eventType, target, screenshotId) {
+    const interaction = {
+        eventType,
+        timestamp: new Date().toISOString(),
+        targetClass: truncateClasses(target.className), // Simplify class content
+        targetId: target.id || '',
+        targetText: target.innerText.trim() || target.value || '', // Trim whitespace
+        htmlSnapshotId, // Attach the current HTML snapshot ID
+        screenshotId // Attach the screenshot ID
+    };
+
+    // Save interaction in storage
+    storeInteraction(interaction);
 }
 
-// Track other click events
-document.addEventListener("click", (event) => {
-  const target = event.target;
-  const clickTime = formatTime(Date.now());
+// Truncate classes to reduce verbosity
+function truncateClasses(className) {
+    if (!className) return '';
+    const classes = className.split(' ');
+    return classes[0]; // Use only the first class
+}
 
-  if (target.classList.contains("s-image") || target.classList.contains("a-size-mini a-spacing-none a-color-base s-line-clamp-2")) {
-    data.clicks.push({ time: clickTime, type: "itemClick" });
-  } else if (target.classList.contains("a-button-input") || target.classList.contains("a-native-dropdown a-declarative")) {
-    data.clicks.push({ time: clickTime, type: "sizeSelection" });
-  } else if (target.classList.contains("a-size-base") && target.textContent.includes("ratings")) {
-    data.reviewsClicks.push({ time: clickTime, type: "reviewClick" });
-  } else if (target.classList.contains("a-declarative")) {
-    data.clicks.push({ time: clickTime, type: "filterClick" });
-  } else if (target.id === "add-to-cart-button") {
-    data.cartAdditions.push({ time: clickTime, type: "addToCart" });
-  } else if (target.id === "buy-now-button") {
-    data.clicks.push({ time: clickTime, type: "buyNowClick" });
-  }
+// Function to store interactions
+function storeInteraction(interaction) {
+    chrome.storage.local.get(['interactions'], (result) => {
+        const interactions = result.interactions || [];
+        interactions.push(interaction);
+        chrome.storage.local.set({ interactions }, () => {
+            console.log("Interaction recorded:", interaction);
+        });
+    });
+}
+
+// Event Listeners for interactions
+document.addEventListener("click", async (event) => {
+    const target = event.target;
+    const screenshotId = await captureScreenshot("click", target);
+    captureInteraction("click", target, screenshotId);
 });
 
-// Track scroll events to specific sections
-document.addEventListener("scroll", () => {
-  const now = Date.now();
-  const scrollDuration = now - lastScrollTime;
+document.addEventListener("blur", async (event) => {
+    if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") {
+        const target = event.target;
+        const screenshotId = await captureScreenshot("input", target);
+        captureInteraction("input", target, screenshotId);
+    }
+}, true);
 
-  // Check if user is scrolling to specific sections
-  if (isInViewPort(document.querySelector("Similar brands on Amazon"))) {
-    data.scrolls.push({ time: now, type: "scrollToSimilarBrands", duration: scrollDuration });
-  } else if (isInViewPort(document.querySelector("Related products"))) {
-    data.scrolls.push({ time: now, type: "scrollToRelatedProducts", duration: scrollDuration });
-  } else if (isInViewPort(document.querySelector("Product details"))) {
-    data.scrolls.push({ time: now, type: "scrollToProductDetails", duration: scrollDuration });
-  }
-
-  lastScrollTime =formatTime(now);
+document.addEventListener("change", async (event) => {
+    if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") {
+        const target = event.target;
+        const screenshotId = await captureScreenshot("input", target);
+        captureInteraction("input", target, screenshotId);
+    }
 });
 
-// Helper function to check if an element is in the viewport
-function isInViewPort(element) {
-  if (!element) return false;
-  const rect = element.getBoundingClientRect();
-  return (
-    rect.top >= 0 &&
-    rect.left >= 0 &&
-    rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-    rect.right <= (window.innerWidth || document.documentElement.clientWidth)
-  );
-}
-
-// Track time spent on the page
-window.addEventListener("beforeunload", () => {
-  data.timeOnPage = Date.now() - pageEntryTime;
-  sendData();
+document.addEventListener("scroll", async (event) => {
+    const currentTime = Date.now();
+    if (currentTime - lastScrollTime >= SCROLL_THRESHOLD) {
+        lastScrollTime = currentTime;
+        const target = event.target;
+        const screenshotId = await captureScreenshot("scroll", target);
+        captureInteraction("scroll", target, screenshotId);
+    }
 });
 
-// Send data to the background script every minute
-setInterval(sendData, 1000);
+// Improved back action detection
+let lastUrl = location.href;
+window.addEventListener("popstate", async () => {
+    const currentUrl = location.href;
+    if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl; // Update URL to prevent duplicate back actions
+        const screenshotId = await captureScreenshot("back", document.body);
+        captureInteraction("back", document.body, screenshotId);
+    } else {
+        console.log("Ignored duplicate back action.");
+    }
+});
 
-function sendData() {
-  chrome.runtime.sendMessage({ action: "storeData", data });
-  // Reset data after each send
-  data.clicks = [];
-  data.scrolls = [];
-  data.reviewsClicks = [];
-  data.cartAdditions = [];
-}
+// Listener for tab activation to update HTML snapshot
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === "tabActivated") {
+        initializeHtmlSnapshot();
+    }
+});

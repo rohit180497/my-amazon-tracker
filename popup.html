@@ -1,12 +1,36 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Amazon Interaction Tracker</title>
+<head>
+    <title>Extension Popup</title>
+    <style>
+        body {
+            width: 200px;
+            font-family: Arial, sans-serif;
+        }
+        button {
+            width: 100%;
+            margin: 5px 0;
+            padding: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        #output {
+            margin-top: 10px;
+            max-height: 100px;
+            overflow-y: auto;
+            font-size: 12px;
+            background-color: #f0f0f0;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h3>Data Collector</h3>
+    <button id="viewData">View Data</button>
+    <button id="downloadData">Download Data</button>
+    <!-- <button id="captureScreenshot">Capture Screenshot</button> -->
+    <div id="output"></div>
+
     <script src="popup.js"></script>
-  </head>
-  <body>
-    <h1>Interaction Data</h1>
-    <button id="download">Download JSON</button>
-    <div id="data"></div>
-  </body>
+</body>
 </html>

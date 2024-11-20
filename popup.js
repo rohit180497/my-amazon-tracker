@@ -1,78 +1,46 @@
-// document.getElementById("download").addEventListener("click", () => {
-//     chrome.storage.local.get("interactions", (result) => {
-//       if (chrome.runtime.lastError) {
-//         console.error("Error retrieving data:", chrome.runtime.lastError);
-//         return;
-//       }
-  
-//       const interactions = result.interactions || [];
-//       if (interactions.length === 0) {
-//         alert("No interaction data found to download.");
-//         return;
-//       }
-  
-//       try {
-//         const dataStr = JSON.stringify(interactions, null, 2);
-//         const blob = new Blob([dataStr], { type: "application/json" });
-//         const url = URL.createObjectURL(blob);
-  
-//         // Create a temporary download link
-//         const downloadLink = document.createElement("a");
-//         downloadLink.href = url;
-//         downloadLink.download = "amazon_interactions.json";
-  
-//         // Trigger the download
-//         document.body.appendChild(downloadLink);
-//         downloadLink.click();
-  
-//         // Cleanup: remove the link and release the URL object
-//         document.body.removeChild(downloadLink);
-//         URL.revokeObjectURL(url);
-  
-//       } catch (error) {
-//         console.error("Error generating JSON file:", error);
-//         alert("An error occurred while generating the JSON file.");
-//       }
-//     });
-//   });
-  
-document.addEventListener("DOMContentLoaded", () => {
-  const downloadButton = document.getElementById("download");
-  
-  if (downloadButton) {
-    downloadButton.addEventListener("click", () => {
-      chrome.storage.local.get("interactions", (result) => {
-        if (chrome.runtime.lastError) {
-          console.error("Error retrieving data:", chrome.runtime.lastError);
-          return;
-        }
+const viewDataBtn = document.getElementById('viewData');
+const downloadDataBtn = document.getElementById('downloadData');
+// const captureScreenshotBtn = document.getElementById('captureScreenshot');
+const outputDiv = document.getElementById('output');
 
-        const interactions = result.interactions || [];
-        if (interactions.length === 0) {
-          alert("No interaction data found to download.");
-          return;
-        }
+function displayData(data) {
+    outputDiv.textContent = JSON.stringify(data, null, 2);
+}
 
-        try {
-          const dataStr = JSON.stringify(interactions, null, 2);
-          const blob = new Blob([dataStr], { type: "application/json" });
-          const url = URL.createObjectURL(blob);
-
-          const downloadLink = document.createElement("a");
-          downloadLink.href = url;
-          downloadLink.download = "amazon_interactions.json";
-
-          document.body.appendChild(downloadLink);
-          downloadLink.click();
-          document.body.removeChild(downloadLink);
-          URL.revokeObjectURL(url);
-        } catch (error) {
-          console.error("Error generating JSON file:", error);
-          alert("An error occurred while generating the JSON file.");
-        }
-      });
-    });
-  } else {
-    console.error("Download button not found");
-  }
+viewDataBtn.addEventListener('click', () => {
+    try {
+        chrome.storage.local.get(['interactions', 'screenshots'], (result) => {
+            displayData(result);
+        });
+    } catch (error) {
+        outputDiv.textContent = `Error: ${error.message}`;
+    }
 });
+
+downloadDataBtn.addEventListener('click', () => {
+    try {
+        chrome.runtime.sendMessage({ action: 'downloadData' }, (response) => {
+            if (response.success) {
+                outputDiv.textContent = 'Data downloaded successfully.';
+            } else {
+                outputDiv.textContent = `Failed to download data: ${response.error || 'Unknown error'}`;
+            }
+        });
+    } catch (error) {
+        outputDiv.textContent = `Error: ${error.message}`;
+    }
+});
+
+// captureScreenshotBtn.addEventListener('click', () => {
+//     try {
+//         chrome.runtime.sendMessage({ action: 'captureScreenshot' }, (response) => {
+//             if (response.success) {
+//                 outputDiv.textContent = 'Screenshot captured successfully.';
+//             } else {
+//                 outputDiv.textContent = `Failed to capture screenshot: ${response.message || 'Unknown error'}`;
+//             }
+//         });
+//     } catch (error) {
+//         outputDiv.textContent = `Error: ${error.message}`;
+//     }
+// });
